@@ -49,6 +49,8 @@ app.ws("/media", (ws, req) => {
         return callback();
       }
 
+      console.log(`Received Twilio message: ${msg.event}`);
+
       if (msg.event === "start") {
         callSid = msg.start.callSid;
         console.log(`Call started: ${callSid}`);
