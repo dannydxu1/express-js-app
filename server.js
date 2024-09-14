@@ -64,6 +64,18 @@ app.ws("/media", (ws, req) => {
     },
   });
 
+  const pcmStream = new Transform({
+    transform(chunk, encoding, callback) {
+      // Convert μ-law to PCM
+      const wav = new WaveFile();
+      wav.fromScratch(1, 8000, '8m', chunk);
+      wav.fromMuLaw();
+      const pcmData = Buffer.from(wav.data.samples);
+      this.push(pcmData);
+      callback();
+    },
+  });
+
   // Set up Deepgram's live transcription socket
   const deepgramSocket = deepgram.listen.live({
     encoding: "mulaw", // Specify the audio encoding as μ-law
@@ -94,7 +106,7 @@ app.ws("/media", (ws, req) => {
   });
 
   // Pipe the audio stream
-  mediaStream.pipe(audioStream);
+  mediaStream.pipe(audioStream).pipe(pcmStream).pipe(deepgramSocket);
 
   // For each chunk of audio data, send it to Deepgram
   audioStream.on("data", (data) => {
