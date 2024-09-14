@@ -6,7 +6,7 @@ const expressWs = require('express-ws');
 const websocketStream = require('websocket-stream/stream');
 const { Transform } = require('stream');
 const WaveFile = require('wavefile').WaveFile;
-const { Deepgram } = require('@deepgram/sdk');
+const { createClient } = require('@deepgram/sdk');
 const Twilio = require('twilio');
 const path = require('path');
 
@@ -14,7 +14,7 @@ const app = express();
 expressWs(app);
 
 const twilioClient = Twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-const deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
+const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
 // Serve static files from the 'public' directory
 app.use(express.static('public'));
