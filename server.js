@@ -1,11 +1,8 @@
-// server.js
-
 require('dotenv').config();
 const express = require('express');
 const expressWs = require('express-ws');
 const websocketStream = require('websocket-stream/stream');
 const { Transform } = require('stream');
-const WaveFile = require('wavefile').WaveFile;
 const { createClient } = require('@deepgram/sdk');
 const Twilio = require('twilio');
 const path = require('path');
@@ -25,55 +22,62 @@ app.set('views', path.join(__dirname, 'views'));
 
 // Twilio webhook endpoint for incoming calls
 app.post('/twiml', (req, res) => {
+  console.log("/twiml accessed");
+  console.log(req.body);
   res.set('Content-Type', 'application/xml');
   res.render('twiml', { host: req.hostname });
 });
 
 // WebSocket endpoint for Twilio Media Streams
 app.ws('/media', (ws, req) => {
+  console.log("/media accessed");
   const mediaStream = websocketStream(ws);
   let callSid;
 
+	console.log("f1");
+  // Transform stream to extract audio from Twilio messages
   const audioStream = new Transform({
-    transform(chunk, encoding, callback) {
-      const message = JSON.parse(chunk.toString('utf8'));
-
-      if (message.event === 'start') {
-        callSid = message.start.callSid;
+    objectMode: true,
+    transform: (chunk, encoding, callback) => {
+      const msg = JSON.parse(chunk.toString('utf8'));
+console.log(msg);      
+if (msg.event === 'start') {
+        callSid = msg.start.callSid;
         console.log(`Call started: ${callSid}`);
+      } else if (msg.event === 'media') {
+        const payload = Buffer.from(msg.media.payload, 'base64');
+        callback(null, payload);
+      } else if (msg.event === 'stop') {
+        console.log(`Call stopped: ${callSid}`);
+        callback(null);
+      } else {
+        callback();
       }
-
-      if (message.event === 'media') {
-        const payload = Buffer.from(message.media.payload, 'base64');
-        this.push(payload);
-      }
-
-      callback();
-    },
+    }
   });
 
+console.log("f2");
+  // Transform stream to ensure audio is in the correct format
   const pcmStream = new Transform({
-    transform(chunk, encoding, callback) {
-      // Convert μ-law to PCM
-      const wav = new WaveFile();
-      wav.fromScratch(1, 8000, '8m', chunk);
-      wav.fromMuLaw();
-      const pcmData = Buffer.from(wav.data.samples);
-      this.push(pcmData);
-      callback();
-    },
+    transform: (chunk, encoding, callback) => {
+      // Assuming the audio is already in PCM 16-bit mono 8kHz
+      // If not, you would need to convert it here
+      callback(null, chunk);
+    }
   });
 
-  // Deepgram live transcription
+console.log("f3");
+  // Set up Deepgram's live transcription socket
   const deepgramSocket = deepgram.transcription.live({
     punctuate: true,
     interim_results: false,
+    language: 'en-US'
   });
-
+console.log("f3");
   deepgramSocket.addListener('open', () => {
     console.log('Deepgram connection opened.');
   });
-
+console.log("f4");
   deepgramSocket.addListener('transcriptReceived', (data) => {
     const transcript = data.channel.alternatives[0].transcript;
     if (transcript) {
@@ -81,18 +85,23 @@ app.ws('/media', (ws, req) => {
       // Here you can pass the transcription to the frontend or another service
     }
   });
-
+console.log("f5");
   deepgramSocket.addListener('close', () => {
     console.log('Deepgram connection closed.');
   });
 
   // Pipe the audio stream through the transforms to Deepgram
   mediaStream.pipe(audioStream).pipe(pcmStream).pipe(deepgramSocket);
-
+console.log("f6");
   ws.on('close', () => {
-    console.log(`Call ended: ${callSid}`);
+    console.log(`WebSocket closed for call: ${callSid}`);
     deepgramSocket.finish();
   });
+});
+
+app.get('/', (req, res) => {
+  console.log("/endpoint accessed");
+  res.send('Hello from your server at 137.184.142.230!');
 });
 
 // Start the server
