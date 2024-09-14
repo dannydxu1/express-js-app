@@ -54,6 +54,8 @@ app.ws("/media", (ws, req) => {
         console.log(`Call started: ${callSid}`);
       } else if (msg.event === "media") {
         const payload = Buffer.from(msg.media.payload, "base64");
+        console.log(`Received audio payload from Twilio: ${payload.length} bytes`);
+        this.push(payload);
         callback(null, payload);
       } else if (msg.event === "stop") {
         console.log(`Call stopped: ${callSid}`);
@@ -71,6 +73,7 @@ app.ws("/media", (ws, req) => {
       wav.fromScratch(1, 8000, '8m', chunk);
       wav.fromMuLaw();
       const pcmData = Buffer.from(wav.data.samples);
+      console.log(`Converted to PCM: ${pcmData.length} bytes`);
       this.push(pcmData);
       callback();
     },
