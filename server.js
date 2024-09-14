@@ -41,7 +41,14 @@ app.ws("/media", (ws, req) => {
   const audioStream = new Transform({
     objectMode: true,
     transform: (chunk, encoding, callback) => {
-      const msg = JSON.parse(chunk.toString("utf8"));
+      let msg;
+      try {
+        msg = JSON.parse(chunk.toString("utf8"));
+      } catch (error) {
+        console.error("Failed to parse JSON:", error);
+        return callback();
+      }
+
       if (msg.event === "start") {
         callSid = msg.start.callSid;
         console.log(`Call started: ${callSid}`);
@@ -57,16 +64,10 @@ app.ws("/media", (ws, req) => {
     },
   });
 
-  // Transform stream to ensure audio is in the correct format
-  const pcmStream = new Transform({
-    transform: (chunk, encoding, callback) => {
-      // Assuming the audio is already in PCM 16-bit mono 8kHz
-      callback(null, chunk);
-    },
-  });
-
   // Set up Deepgram's live transcription socket
   const deepgramSocket = deepgram.listen.live({
+    encoding: "mulaw", // Specify the audio encoding as μ-law
+    sample_rate: 8000, // Specify the sample rate
     punctuate: true,
     interim_results: false,
     language: "en-US",
@@ -92,12 +93,21 @@ app.ws("/media", (ws, req) => {
     console.error("Deepgram error:", error);
   });
 
-  // Pipe the audio stream through the transforms
-  mediaStream.pipe(audioStream).pipe(pcmStream);
+  // Pipe the audio stream
+  mediaStream.pipe(audioStream);
 
-  // For each chunk of PCM data, send it to Deepgram
-  pcmStream.on("data", (data) => {
+  // For each chunk of audio data, send it to Deepgram
+  audioStream.on("data", (data) => {
     deepgramSocket.send(data);
+  });
+
+  // Handle stream errors
+  audioStream.on("error", (error) => {
+    console.error("Audio Stream error:", error);
+  });
+
+  ws.on("error", (error) => {
+    console.error("WebSocket error:", error);
   });
 
   ws.on("close", () => {
@@ -105,6 +115,7 @@ app.ws("/media", (ws, req) => {
     deepgramSocket.finish();
   });
 });
+
 
 app.get("/", (req, res) => {
   console.log("/endpoint accessed");
