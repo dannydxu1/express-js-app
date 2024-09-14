@@ -34,7 +34,13 @@ app.post("/twiml", (req, res) => {
 // WebSocket endpoint for Twilio Media Streams
 app.ws("/media", (ws, req) => {
   console.log("/media accessed");
-  const mediaStream = websocketStream(ws);
+
+  const mediaStream = websocketStream(ws, { objectMode: true });
+
+  mediaStream.on("data", (chunk) => {
+    console.log("Received data from Twilio:", chunk.toString("utf8"));
+  });
+
   let callSid;
 
   // Transform stream to extract audio from Twilio messages
@@ -54,37 +60,25 @@ app.ws("/media", (ws, req) => {
       if (msg.event === "start") {
         callSid = msg.start.callSid;
         console.log(`Call started: ${callSid}`);
+        callback();
       } else if (msg.event === "media") {
         const payload = Buffer.from(msg.media.payload, "base64");
         console.log(`Received audio payload from Twilio: ${payload.length} bytes`);
         this.push(payload);
-        callback(null, payload);
+        callback();
       } else if (msg.event === "stop") {
         console.log(`Call stopped: ${callSid}`);
-        callback(null);
+        callback();
       } else {
         callback();
       }
     },
   });
 
-  const pcmStream = new Transform({
-    transform(chunk, encoding, callback) {
-      // Convert μ-law to PCM
-      const wav = new WaveFile();
-      wav.fromScratch(1, 8000, '8m', chunk);
-      wav.fromMuLaw();
-      const pcmData = Buffer.from(wav.data.samples);
-      console.log(`Converted to PCM: ${pcmData.length} bytes`);
-      this.push(pcmData);
-      callback();
-    },
-  });
-
   // Set up Deepgram's live transcription socket
-  const deepgramSocket = deepgram.listen.live({
-    encoding: "mulaw", // Specify the audio encoding as μ-law
-    sample_rate: 8000, // Specify the sample rate
+  const deepgramSocket = deepgram.transcription.live({
+    encoding: "mulaw", // Since Twilio sends μ-law audio
+    sample_rate: 8000,
     punctuate: true,
     interim_results: false,
     language: "en-US",
@@ -110,13 +104,8 @@ app.ws("/media", (ws, req) => {
     console.error("Deepgram error:", error);
   });
 
-  // Pipe the audio stream
-  mediaStream.pipe(audioStream).pipe(pcmStream).pipe(deepgramSocket);
-
-  // For each chunk of audio data, send it to Deepgram
-  audioStream.on("data", (data) => {
-    deepgramSocket.send(data);
-  });
+  // Pipe the audio stream directly to Deepgram
+  mediaStream.pipe(audioStream).pipe(deepgramSocket);
 
   // Handle stream errors
   audioStream.on("error", (error) => {
@@ -133,10 +122,9 @@ app.ws("/media", (ws, req) => {
   });
 });
 
-
 app.get("/", (req, res) => {
   console.log("/endpoint accessed");
-  res.send("Hello from your server at 137.184.142.230!");
+  res.send("Hello from your server!");
 });
 
 // Start the server
@@ -144,3 +132,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
+
